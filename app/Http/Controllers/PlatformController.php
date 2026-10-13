@@ -26,6 +26,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -134,7 +135,9 @@ class PlatformController extends Controller
                 'expires_at' => $overrides[$feature->key]->expires_at ?? null,
             ]),
             'limits' => $limits,
-            'users' => $this->inside($tenant, fn () => User::query()->get(['id', 'name', 'email', 'status', 'job_title'])),
+            'users' => $this->tenantHasTable($tenant, 'users')
+                ? $this->inside($tenant, fn () => User::query()->get(['id', 'name', 'email', 'status', 'job_title']))
+                : [],
             'impersonations' => ImpersonationLog::query()->where('tenant_id', $tenant->id)->latest()->limit(20)->get(),
             'templates' => IndustryCatalog::options(),
         ]);
@@ -357,9 +360,48 @@ class PlatformController extends Controller
         $this->inside($tenant, fn () => Setting::putValue('vocabulary', $vocabulary->forIndustry($key)));
     }
 
-    private function countInside(Tenant $tenant, string $table): int
+    /**
+     * Count rows in a tenant schema. A missing schema or table yields null so
+     * one incomplete workspace cannot take down the platform list.
+     */
+    private function countInside(Tenant $tenant, string $table): ?int
     {
-        return (int) $this->inside($tenant, fn () => DB::connection('tenant')->table($table)->count());
+        if (! $this->tenantHasTable($tenant, $table)) {
+            return null;
+        }
+
+        return (int) DB::connection('central')->scalar('select count(*) from '.$tenant->schema_name.'.'.$table);
+    }
+
+    private function tenantHasTable(Tenant $tenant, string $table): bool
+    {
+        $schema = (string) $tenant->schema_name;
+        if (! preg_match('/^[a-z][a-z0-9_]+$/', $schema) || ! preg_match('/^[a-z][a-z0-9_]+$/', $table)) {
+            Log::warning('Workspace schema name cannot be queried.', [
+                'tenant_id' => $tenant->id,
+                'schema' => $schema,
+                'table' => $table,
+            ]);
+
+            return false;
+        }
+
+        $present = (int) DB::connection('central')->scalar(
+            'select count(*) from information_schema.tables where table_schema = ? and table_name = ?',
+            [$schema, $table],
+        );
+
+        if ($present !== 1) {
+            Log::warning('Workspace schema is missing a table.', [
+                'tenant_id' => $tenant->id,
+                'schema' => $schema,
+                'table' => $table,
+            ]);
+
+            return false;
+        }
+
+        return true;
     }
 
     private function inside(Tenant $tenant, \Closure $callback): mixed

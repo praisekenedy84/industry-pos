@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\PlatformAdmin;
+use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -51,6 +53,48 @@ class PlatformConsoleTest extends TestCase
                 ->has('tenants'));
     }
 
+    public function test_workspace_list_renders_when_a_tenant_schema_has_no_branches_table(): void
+    {
+        $admin = $this->admin('missing-branches');
+        $ready = $this->tenant('ready-shop', 't_ready_branches');
+        $empty = $this->tenant('empty-shop', 't_empty_schema');
+        DB::connection('central')->statement('CREATE SCHEMA t_ready_branches');
+        DB::connection('central')->statement('CREATE TABLE t_ready_branches.branches (id uuid primary key)');
+        DB::connection('central')->statement("INSERT INTO t_ready_branches.branches (id) VALUES ('11111111-1111-1111-1111-111111111111')");
+        DB::connection('central')->statement('CREATE SCHEMA t_empty_schema');
+
+        try {
+            $tenants = collect($this->actingAs($admin, 'platform')->get('/platform')->assertOk()->inertiaProps('tenants'))->keyBy('slug');
+
+            $this->assertSame(1, $tenants['ready-shop']['branches']);
+            $this->assertNull($tenants['empty-shop']['branches']);
+        } finally {
+            DB::connection('central')->statement('DROP SCHEMA IF EXISTS t_ready_branches CASCADE');
+            DB::connection('central')->statement('DROP SCHEMA IF EXISTS t_empty_schema CASCADE');
+            $ready->delete();
+            $empty->delete();
+        }
+    }
+
+    public function test_workspace_page_renders_when_the_tenant_schema_has_no_users_table(): void
+    {
+        $admin = $this->admin('missing-users');
+        $empty = $this->tenant('bare-shop', 't_bare_schema');
+        DB::connection('central')->statement('CREATE SCHEMA t_bare_schema');
+
+        try {
+            $this->actingAs($admin, 'platform')
+                ->get('/platform/tenants/'.$empty->id)
+                ->assertOk()
+                ->assertInertia(fn (AssertableInertia $page) => $page
+                    ->component('Platform/TenantShow')
+                    ->where('users', []));
+        } finally {
+            DB::connection('central')->statement('DROP SCHEMA IF EXISTS t_bare_schema CASCADE');
+            $empty->delete();
+        }
+    }
+
     public function test_guest_root_dashboard_returns_to_the_welcome_page(): void
     {
         $this->get('/dashboard')->assertRedirect('/');
@@ -91,6 +135,16 @@ class PlatformConsoleTest extends TestCase
                 ->component('Platform/Templates')
                 ->where('nav.2.href', '/platform/templates')
                 ->has('templates'));
+    }
+
+    private function tenant(string $slug, string $schema): Tenant
+    {
+        return Tenant::query()->create([
+            'name' => $slug,
+            'slug' => $slug,
+            'schema_name' => $schema,
+            'industry_key' => 'bakery',
+        ]);
     }
 
     private function admin(string $key): PlatformAdmin
