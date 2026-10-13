@@ -12,7 +12,7 @@ import { editGroupedNumber, groupDigits, plainNumber } from '@/lib/groupedNumber
 import { applyTerminology } from '@/lib/terminology';
 import { clearSales } from '@/lib/offlineQueue';
 import { w } from '@/lib/paths';
-import { Bell, Search, Package, LayoutDashboard, Warehouse, Factory, Truck, ShoppingCart, Users, ChartNoAxesCombined, Settings, ChevronRight, Inbox, Layers, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, X, LogOut, Monitor, Download, Building2, SlidersHorizontal, LayoutTemplate } from 'lucide-react';
+import { Bell, Eye, EyeOff, Search, Package, LayoutDashboard, Warehouse, Factory, Truck, ShoppingCart, Users, ChartNoAxesCombined, Settings, ChevronRight, Inbox, Layers, Menu as MenuIcon, PanelLeftClose, PanelLeftOpen, X, LogOut, Monitor, Download, Building2, SlidersHorizontal, LayoutTemplate } from 'lucide-react';
 import { Plus, Save, Pencil, Trash2, Archive, Check, CircleCheck, CircleX, Ban, Pause, Play, Send, PackageCheck, ArrowRight, ArrowLeft, ArrowRightLeft, RotateCcw, RefreshCw, Copy, Upload, Printer, ReceiptText, CreditCard, LogIn, LockKeyhole, KeyRound, UserPlus, ShieldCheck, Mail, FileCheck, ClipboardCheck } from 'lucide-react';
 
 const buttonIcons = {
@@ -76,8 +76,24 @@ function groupedPlaceholder(placeholder) {
     return groupDigits(plainNumber(text));
 }
 
+function PasswordVisibilityToggle({ visible, disabled, onToggle }) {
+    const t = useT();
+    const label = visible ? t('Hide password') : t('Show password');
+
+    return (
+        <InputAdornment position="end">
+            <Tooltip title={label}>
+                <IconButton type="button" aria-label={label} aria-pressed={visible} disabled={disabled} edge="end" onClick={onToggle} onMouseDown={(event) => event.preventDefault()}>
+                    {visible ? <EyeOff aria-hidden="true" size={18} /> : <Eye aria-hidden="true" size={18} />}
+                </IconButton>
+            </Tooltip>
+        </InputAdornment>
+    );
+}
+
 export function Input({ label, error, helperText, type = 'text', select = false, multiline = false, multiple = false, children, className = '', inputMode, min, max, step, decimals, pattern, maxLength, 'aria-label': ariaLabel, slotProps = {}, value, onChange, placeholder, inputRef, fieldWidth, sx = [], ...props }) {
     const t = useT();
+    const [passwordVisible, setPasswordVisible] = useState(false);
     const numberRef = useRef(null);
     const pendingCaret = useRef(null);
     const grouped = type === 'number' && !select && !multiline;
@@ -131,12 +147,25 @@ export function Input({ label, error, helperText, type = 'text', select = false,
         return <Control size="small" value={value} onChange={onChange} {...props} slotProps={{ input: nativeProps }} />;
     }
     const displayedValue = grouped && value != null ? groupDigits(plainNumber(value, numberOptions)) : value;
+    const revealPassword = type === 'password' && !select && !multiline;
     const preferredWidth = { short: '16rem', medium: '24rem', full: '100%' }[fieldWidth]
         || ({ date: '13rem', 'datetime-local': '18rem', time: '10rem' }[type]);
+    const inputSlot = {
+        ...slotProps.input,
+        ...(grouped ? { sx: [{ fontVariantNumeric: 'tabular-nums' }, slotProps.input?.sx] } : {}),
+        ...(revealPassword ? {
+            endAdornment: (
+                <>
+                    {slotProps.input?.endAdornment}
+                    <PasswordVisibilityToggle visible={passwordVisible} disabled={Boolean(props.disabled)} onToggle={() => setPasswordVisible((current) => !current)} />
+                </>
+            ),
+        } : {}),
+    };
     return (
         <TextField
             {...props}
-            type={grouped ? 'text' : type}
+            type={grouped || (revealPassword && passwordVisible) ? 'text' : type}
             select={select}
             multiline={multiline}
             value={displayedValue}
@@ -151,7 +180,7 @@ export function Input({ label, error, helperText, type = 'text', select = false,
             slotProps={{
                 ...slotProps,
                 htmlInput: { ...nativeProps, ...slotProps.htmlInput },
-                ...(grouped ? { input: { ...slotProps.input, sx: [{ fontVariantNumeric: 'tabular-nums' }, slotProps.input?.sx] } } : {}),
+                ...((grouped || revealPassword) ? { input: inputSlot } : {}),
                 inputLabel: { ...(select || ['date', 'datetime-local', 'time'].includes(type) ? { shrink: true } : {}), ...slotProps.inputLabel },
                 ...(select ? { select: { native: true, multiple, ...slotProps.select } } : {}),
             }}

@@ -155,6 +155,11 @@ class SingleLoginTest extends TestCase
             ->assertJsonPath('start_url', '/w/'.$slug.'/?source=pwa')
             ->assertJsonPath('name', 'Bakery');
 
+        $icon = $this->get('/w/'.$slug.'/icon/192');
+        $icon->assertOk();
+        $icon->assertHeader('content-type', 'image/png');
+        $this->assertStringStartsWith("\x89PNG\r\n\x1a\n", $icon->getContent());
+
         $this->get('http://'.$slug.'.localhost/dashboard')->assertNotFound();
     }
 

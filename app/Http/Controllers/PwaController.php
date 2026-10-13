@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Auth\WorkspaceSessionManager;
 use App\Models\Branch;
+use App\Models\Setting;
 use App\Models\Terminal;
 use App\Support\Paths;
 use Illuminate\Http\JsonResponse;
@@ -22,7 +24,7 @@ class PwaController extends Controller
         $slug = $workspace->slug;
         $base = '/w/'.$slug;
         $name = $workspace->display_name;
-        $policy = app(\App\Auth\WorkspaceSessionManager::class)->policy($tenant->id);
+        $policy = app(WorkspaceSessionManager::class)->policy($tenant->id);
         $display = ($policy['pwa_display'] ?? 'standalone') === 'fullscreen' ? 'fullscreen' : 'standalone';
 
         return response()->json([
@@ -79,12 +81,17 @@ class PwaController extends Controller
         return response($html, 200, ['Content-Type' => 'text/html; charset=UTF-8']);
     }
 
-    public function icon(int $size): Response
+    public function icon(Request $request): Response
     {
+        $size = (int) $request->route('size');
         $size = in_array($size, [192, 512], true) ? $size : 192;
-        if (! function_exists('imagecreatetruecolor')) {
-            abort(404);
-        }
+        $png = function_exists('imagecreatetruecolor') ? $this->drawnIcon($size) : $this->solidPng($size);
+
+        return response($png, 200, ['Content-Type' => 'image/png', 'Cache-Control' => 'public, max-age=86400']);
+    }
+
+    private function drawnIcon(int $size): string
+    {
         $image = imagecreatetruecolor($size, $size);
         $background = imagecolorallocate($image, 0, 117, 222);
         $ink = imagecolorallocate($image, 255, 255, 255);
@@ -96,7 +103,25 @@ class PwaController extends Controller
         $png = ob_get_clean();
         imagedestroy($image);
 
-        return response($png, 200, ['Content-Type' => 'image/png', 'Cache-Control' => 'public, max-age=86400']);
+        return $png === false ? $this->solidPng($size) : $png;
+    }
+
+    private function solidPng(int $size): string
+    {
+        $row = "\x00".str_repeat("\x00\x75\xde", $size);
+        $compressed = gzcompress(str_repeat($row, $size), 9);
+        $ihdr = pack('NNCCCCC', $size, $size, 8, 2, 0, 0, 0);
+        $png = "\x89PNG\r\n\x1a\n";
+        $png .= $this->pngChunk('IHDR', $ihdr);
+        $png .= $this->pngChunk('IDAT', $compressed);
+        $png .= $this->pngChunk('IEND', '');
+
+        return $png;
+    }
+
+    private function pngChunk(string $type, string $data): string
+    {
+        return pack('N', strlen($data)).$type.$data.hash('crc32b', $type.$data, true);
     }
 
     public function terminalSetup(Request $request): InertiaResponse
@@ -128,7 +153,7 @@ class PwaController extends Controller
         ]);
         cookie()->queue(cookie('pos_terminal', $terminal->id, 60 * 24 * 365, '/', null, $request->isSecure(), true, false, 'lax'));
         if ($request->boolean('fullscreen')) {
-            \App\Models\Setting::putValue('pwa_display', 'fullscreen');
+            Setting::putValue('pwa_display', 'fullscreen');
         }
 
         return back()->with('success', 'Terminal registered. Install the app, then sign in with a PIN on this device.');

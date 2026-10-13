@@ -51,6 +51,20 @@ class PlatformConsoleTest extends TestCase
                 ->has('tenants'));
     }
 
+    public function test_guest_root_dashboard_returns_to_the_welcome_page(): void
+    {
+        $this->get('/dashboard')->assertRedirect('/');
+    }
+
+    public function test_platform_admin_root_dashboard_returns_to_the_console(): void
+    {
+        $admin = $this->admin('dashboard');
+
+        $this->actingAs($admin, 'platform')
+            ->get('/dashboard')
+            ->assertRedirect('/platform');
+    }
+
     public function test_feature_matrix_renders_for_a_platform_admin(): void
     {
         $admin = $this->admin('features');

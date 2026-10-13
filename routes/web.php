@@ -16,6 +16,7 @@ use App\Http\Controllers\PurchasingController;
 use App\Http\Controllers\PwaController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\SettingsController;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', HomeController::class);
@@ -37,6 +38,13 @@ Route::get('/invite/{token}', [AuthController::class, 'inviteForm'])->name('invi
 Route::post('/invite/{token}', [AuthController::class, 'invite']);
 
 Route::middleware('central')->group(function () {
+    Route::get('/dashboard', function () {
+        if (Auth::guard('platform')->check()) {
+            return redirect('/platform');
+        }
+
+        return redirect('/');
+    });
     Route::get('/signup', [PlatformController::class, 'signupForm'])->name('signup');
     Route::post('/signup', [PlatformController::class, 'signup']);
 

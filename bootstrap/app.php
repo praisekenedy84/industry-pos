@@ -13,11 +13,13 @@ use App\Http\Middleware\ResolveApiTenant;
 use App\Http\Middleware\ResolveDeviceSession;
 use App\Http\Middleware\SecurityHeaders;
 use App\Http\Middleware\SetLocale;
+use App\Support\Paths;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -80,7 +82,19 @@ return Application::configure(basePath: dirname(__DIR__))
             }
             $status = $response->getStatusCode();
             if (in_array($status, [403, 404, 419, 500, 503], true) && ! $request->is('api/*')) {
-                return Inertia::render('Errors/Http', ['status' => $status])
+                $home = '/';
+                if (Paths::base() !== '') {
+                    $home = Paths::to('/dashboard');
+                } elseif ($request->is('admin') || $request->is('admin/*')) {
+                    $home = '/admin';
+                } elseif ($request->is('platform') || $request->is('platform/*') || Auth::guard('platform')->check()) {
+                    $home = '/platform';
+                }
+
+                return Inertia::render('Errors/Http', [
+                    'status' => $status,
+                    'home' => $home,
+                ])
                     ->toResponse($request)
                     ->setStatusCode($status);
             }
