@@ -1,0 +1,212 @@
+@layer theme, base, mui, components, utilities;
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+    --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+    --color-canvas: #f7f6fe;
+    --color-surface: #ffffff;
+    --color-hairline: #e6e2f3;
+    --color-ink: #182632;
+    --color-muted: #627382;
+    --color-primary: #5745de;
+    --color-primary-hover: #4533c5;
+    --color-link: #5140ce;
+    --color-danger: #dc2626;
+    --color-on-sticker: #37352f;
+    --color-focus: #5745de;
+    --color-sticker-blue: #e9e4ff;
+    --color-sticker-green: #d5f5e5;
+    --color-sticker-yellow: #fff0c2;
+    --color-sticker-red: #ffe0e8;
+    --color-sticker-purple: #efe0ff;
+}
+
+:root {
+    color-scheme: light;
+}
+
+:root.dark,
+.dark {
+    color-scheme: dark;
+    --color-canvas: #151427;
+    --color-surface: #211f36;
+    --color-hairline: #49445f;
+    --color-primary: #b6adff;
+    --color-primary-hover: #c9c2ff;
+    --color-ink: #f6f5f2;
+    --color-muted: #b7b6b0;
+    --color-link: #c1b8ff;
+    --color-danger: #ffb4ab;
+    --color-on-sticker: #f6f5f2;
+    --color-focus: #c1b8ff;
+    --color-sticker-blue: #30284f;
+    --color-sticker-green: #173d32;
+    --color-sticker-yellow: #473915;
+    --color-sticker-red: #492539;
+    --color-sticker-purple: #38254d;
+}
+
+body {
+    margin: 0;
+    font-family: var(--font-sans);
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+}
+
+progress { border: 0; border-radius: 999px; overflow: hidden; }
+progress::-webkit-progress-bar { background: var(--color-canvas); }
+progress::-webkit-progress-value { background: var(--color-primary); border-radius: 999px; }
+progress::-moz-progress-bar { background: var(--color-primary); }
+
+button, summary, select { touch-action: manipulation; }
+button:not(:disabled), summary { cursor: pointer; }
+input, select, textarea { max-width: 100%; }
+input[type='checkbox'], input[type='radio'] { accent-color: var(--color-primary); }
+table { font-variant-numeric: tabular-nums; }
+::selection { background: var(--color-sticker-blue); color: var(--color-ink); }
+
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
+:is(.bg-sticker-blue, .bg-sticker-green, .bg-sticker-yellow, .bg-sticker-red, .bg-sticker-purple) {
+    color: var(--color-on-sticker);
+}
+
+.dark .text-primary {
+    color: var(--color-link);
+}
+
+.dark .text-red-600 {
+    color: var(--color-danger);
+}
+
+input:not(.MuiInputBase-input):not([type='checkbox']):not([type='radio']):not([type='hidden']):not([type='range']):not([type='color']):not([type='file']):not([type='image']),
+select:not(.MuiNativeSelect-select),
+textarea:not(.MuiInputBase-input) {
+    background-color: var(--color-surface);
+    color: var(--color-ink);
+    caret-color: var(--color-ink);
+}
+
+option,
+optgroup {
+    background-color: var(--color-surface);
+    color: var(--color-ink);
+}
+
+::placeholder {
+    color: var(--color-muted);
+    opacity: 1;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+    -webkit-text-fill-color: var(--color-ink);
+    caret-color: var(--color-ink);
+    box-shadow: 0 0 0 1000px var(--color-surface) inset;
+    transition: background-color 9999s ease-out;
+}
+
+/*
+ * Outlined inputs already have a border. A focus outline draws a second one,
+ * and the browser fieldset border stacks on MUI's notched outline when the
+ * reset lives inside a cascade layer. Keep one stroke; focus only recolors it.
+ */
+:focus-visible:not(
+    :is(
+        input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):not([type='hidden']),
+        select,
+        textarea,
+        .MuiInputBase-root,
+        .MuiOutlinedInput-root,
+        .MuiSelect-select,
+        .MuiNativeSelect-select
+    )
+) {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+}
+
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):focus,
+input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not([type='color']):focus-visible,
+select:focus,
+select:focus-visible,
+textarea:focus,
+textarea:focus-visible {
+    outline: none;
+}
+
+fieldset.MuiOutlinedInput-notchedOutline {
+    border-style: solid;
+    border-width: 1px;
+}
+
+.receipt,
+.receipt * {
+    color-scheme: light;
+}
+
+.receipt {
+    background: #fff;
+    color: #111;
+}
+
+.receipt :is(input, select, textarea, option, optgroup, button) {
+    background-color: #fff;
+    color: #111;
+    caret-color: #111;
+}
+
+.receipt ::placeholder {
+    color: #5c5b57;
+}
+
+@media print {
+    body * {
+        visibility: hidden;
+    }
+    .receipt,
+    .receipt * {
+        visibility: visible;
+    }
+    .receipt {
+        position: absolute;
+        inset: 0;
+        width: 80mm;
+        background: #fff !important;
+        color: #111 !important;
+    }
+    .no-print {
+        display: none !important;
+    }
+}
+
+/*
+ * The sidebar can still be scrolled with a wheel, trackpad, or keyboard.
+ * The bar itself stays hidden on the drawer and every nested scroller.
+ */
+.MuiDrawer-paper.makerly-sidebar {
+    overflow: hidden;
+}
+
+.makerly-sidebar,
+.makerly-sidebar * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.makerly-sidebar::-webkit-scrollbar,
+.makerly-sidebar *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+    background: transparent;
+}
