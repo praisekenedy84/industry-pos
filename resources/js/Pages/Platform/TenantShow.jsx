@@ -6,11 +6,12 @@ import { Button, Card, ConfirmButton, Csrf, Errors, Field, Input, Shell, useCons
 
 const statusColor = {
     active: 'success',
+    trial: 'info',
     suspended: 'warning',
     pending_deletion: 'error',
 };
 
-export default function TenantShow({ tenant, features = [], limits = [], users = [], impersonations = [], templates = [] }) {
+export default function TenantShow({ tenant, features = [], limits = [], users = [], roles = [], branches = [], impersonations = [], templates = [] }) {
     const t = useT();
     const base = useConsoleBase();
     const profile = useForm({
@@ -30,6 +31,8 @@ export default function TenantShow({ tenant, features = [], limits = [], users =
     const [savingFeatures, setSavingFeatures] = useState(false);
     const limitForm = useForm({ limits: Object.fromEntries(limits.map((row) => [row.limit_key, row.value])) });
     const impersonate = useForm({ user_id: users[0]?.id || '', reason: '', password: '' });
+    const person = useForm({ name: '', email: '', phone: '', password: '', role_id: roles[0]?.id || '', branch_id: branches[0]?.id || '' });
+    const trial = tenant.status === 'trial';
     const paused = tenant.status !== 'active';
     const tenantPath = `${base}/tenants/${tenant.id}`;
 
@@ -40,13 +43,16 @@ export default function TenantShow({ tenant, features = [], limits = [], users =
     return (
         <Shell title={tenant.name} actions={<>
             <Box component="form" method="post" action={`${tenantPath}/export`} sx={{ display: 'inline-flex' }}><Csrf /><Button icon="export" type="submit" tone="soft">{t("Export")}</Button></Box>
-            {paused
-                ? <Button icon="start" tone="soft" onClick={() => router.post(`${tenantPath}/activate`)}>{t("Activate")}</Button>
-                : <ConfirmButton icon="suspend" tone="danger" title={`Suspend ${tenant.name}?`} description={t("People in this workspace are signed out. Their data stays in place.")} onConfirm={() => router.post(`${tenantPath}/suspend`, { reason: 'Suspended from platform' })}>{t("Suspend")}</ConfirmButton>}
+            {trial
+                ? <Button icon="approve" tone="soft" onClick={() => router.post(`${tenantPath}/activate`)}>{t("Approve")}</Button>
+                : paused
+                    ? <Button icon="start" tone="soft" onClick={() => router.post(`${tenantPath}/activate`)}>{t("Activate")}</Button>
+                    : <ConfirmButton icon="suspend" tone="danger" title={`Suspend ${tenant.name}?`} description={t("People in this workspace are signed out. Their data stays in place.")} onConfirm={() => router.post(`${tenantPath}/suspend`, { reason: 'Suspended from platform' })}>{t("Suspend")}</ConfirmButton>}
         </>}>
             <Stack direction="row" spacing={1.5} sx={{ mt: -1, mb: 3, alignItems: 'center', flexWrap: 'wrap' }}>
                 <Typography variant="body2" color="text.secondary">{`/w/${tenant.slug}/`}</Typography>
-                <Chip label={words(tenant.status)} size="small" color={statusColor[tenant.status] || 'default'} variant="outlined" sx={{ textTransform: 'capitalize' }} />
+                <Chip label={tenant.awaiting_approval ? t("Needs approval") : words(tenant.status)} size="small" color={tenant.awaiting_approval ? 'warning' : (statusColor[tenant.status] || 'default')} variant="outlined" sx={{ textTransform: 'capitalize' }} />
+                {trial && tenant.trial_ends_at && <Typography variant="body2" color="text.secondary">{t("Trial ends")} {when(tenant.trial_ends_at)}. {t("After that, an admin must approve it. Call +255743463710 or +255715148503, or email info@mernettechnologies.com.")}</Typography>}
                 {tenant.industry_key && <Chip label={templates.find((template) => template.key === tenant.industry_key)?.name || words(tenant.industry_key)} size="small" variant="outlined" />}
             </Stack>
             {tenant.suspended_reason && <Alert severity={paused ? 'warning' : 'info'} sx={{ mb: 3 }}>{tenant.suspended_reason}</Alert>}
@@ -90,6 +96,21 @@ export default function TenantShow({ tenant, features = [], limits = [], users =
                         </Stack>
                         <Stack direction="row" sx={{ justifyContent: 'flex-end', mt: 2 }}><Button icon="save" loading={savingFeatures} onClick={() => router.put(`${tenantPath}/features`, { features: rows.map(({ key, enabled, expires_at }) => ({ key, enabled, expires_at: expires_at || null })) }, { onStart: () => setSavingFeatures(true), onFinish: () => setSavingFeatures(false) })}>{t("Save features")}</Button></Stack>
                     </> : <Typography variant="body2" color="text.secondary">{t("No features are defined yet.")}</Typography>}
+                </Card>
+                <Card component="form" onSubmit={(event) => { event.preventDefault(); person.post(`${tenantPath}/users`); }} sx={{ p: 3, gridColumn: { lg: '1 / -1' } }}>
+                    <Typography component="h2" variant="h6">{t("People")}</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 3 }}>{t("Add someone who can sign in to this workspace with the email and password you set.")}</Typography>
+                    {users.length > 0 && <Stack spacing={1} sx={{ mb: 3 }}>{users.map((user) => <Typography key={user.id} variant="body2">{user.name} · {user.email || t("No email")} · {words(user.status)}</Typography>)}</Stack>}
+                    <Errors errors={person.errors} />
+                    {roles.length && branches.length ? <Stack spacing={3}>
+                        <Field label={t("Name")} error={person.errors.name}><Input required value={person.data.name} onChange={(event) => person.setData('name', event.target.value)} /></Field>
+                        <Field label={t("Email")} error={person.errors.email}><Input type="email" required value={person.data.email} onChange={(event) => person.setData('email', event.target.value)} /></Field>
+                        <Field label={t("Phone")} error={person.errors.phone}><Input value={person.data.phone} onChange={(event) => person.setData('phone', event.target.value)} /></Field>
+                        <Field label={t("Password")} error={person.errors.password}><Input type="password" autoComplete="new-password" required value={person.data.password} onChange={(event) => person.setData('password', event.target.value)} helperText={t("At least 10 characters. Share it with them directly.")} /></Field>
+                        <Field label={t("Role")} error={person.errors.role_id}><Input select required value={person.data.role_id} onChange={(event) => person.setData('role_id', event.target.value)}>{roles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</Input></Field>
+                        <Field label={t("Branch")} error={person.errors.branch_id}><Input select required value={person.data.branch_id} onChange={(event) => person.setData('branch_id', event.target.value)}>{branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</Input></Field>
+                        <Stack direction="row" sx={{ justifyContent: 'flex-end' }}><Button icon="add" type="submit" loading={person.processing}>{t("Add person")}</Button></Stack>
+                    </Stack> : <Typography variant="body2" color="text.secondary">{t("This workspace is not ready for people yet.")}</Typography>}
                 </Card>
                 <Card component="form" onSubmit={(event) => { event.preventDefault(); impersonate.post(`${tenantPath}/impersonate`); }} sx={{ p: 3, gridColumn: { lg: '1 / -1' } }}>
                     <Typography component="h2" variant="h6">{t("Sign in as support")}</Typography>

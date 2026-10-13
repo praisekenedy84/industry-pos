@@ -4,21 +4,27 @@ namespace App\Http\Controllers;
 
 use App\Auth\DeviceSessionManager;
 use App\Auth\WorkspaceSessionManager;
+use App\Mail\WorkspaceApprovalNotice;
+use App\Models\Branch;
 use App\Models\Feature;
 use App\Models\Identity;
 use App\Models\ImpersonationLog;
 use App\Models\IndustryTemplate;
 use App\Models\Membership;
+use App\Models\Role;
 use App\Models\Setting;
 use App\Models\Tenant;
 use App\Models\TenantFeature;
 use App\Models\TenantLimit;
 use App\Models\User;
+use App\Models\UserNotification;
 use App\Models\Workspace;
 use App\Services\AuditLogger;
+use App\Services\FeatureGate;
 use App\Support\IndustryCatalog;
 use App\Support\IndustryTerms;
 use App\Support\IndustryVocabulary;
+use App\Support\WorkspaceApproval;
 use App\Tenancy\TenancyManager;
 use App\Tenancy\TenantProvisioner;
 use Illuminate\Http\RedirectResponse;
@@ -36,7 +42,12 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PlatformController extends Controller
 {
-    public function __construct(private AuditLogger $audit, private TenantProvisioner $provisioner, private TenancyManager $tenancy) {}
+    public function __construct(
+        private AuditLogger $audit,
+        private TenantProvisioner $provisioner,
+        private TenancyManager $tenancy,
+        private FeatureGate $features,
+    ) {}
 
     public function loginForm(): Response
     {
@@ -86,8 +97,10 @@ class PlatformController extends Controller
         $tenant = $this->provisioner->provision([
             ...$data,
             'sample' => true,
+            'trial' => true,
         ]);
         $this->audit->central('tenant.created', 'tenant', $tenant->id, null, ['slug' => $tenant->slug]);
+        $this->notifyTrial($tenant);
         $membership = Membership::query()->where('tenant_id', $tenant->id)->where('status', 'active')->first();
         $identity = Identity::query()->findOrFail($membership->identity_id);
         $devices = app(DeviceSessionManager::class);
@@ -100,20 +113,25 @@ class PlatformController extends Controller
 
     public function tenants(): Response
     {
-        $tenants = Tenant::query()->with('workspace')->latest()->get()->map(function (Tenant $tenant) {
-            return [
-                'id' => $tenant->id,
-                'name' => $tenant->name,
-                'slug' => $tenant->slug,
-                'status' => $tenant->status,
-                'domain' => '/w/'.$tenant->slug.'/',
-                'industry_key' => $tenant->industry_key,
-                'industry_name' => IndustryCatalog::name((string) $tenant->industry_key),
-                'branches' => $this->countInside($tenant, 'branches'),
-                'branch_limit' => TenantLimit::query()->where('tenant_id', $tenant->id)->where('limit_key', 'max_branches')->value('value'),
-                'updated_at' => $tenant->updated_at,
-            ];
-        });
+        $tenants = Tenant::query()->with('workspace')->latest()->get()
+            ->sortBy(fn (Tenant $tenant): int => $tenant->status === 'trial' ? 0 : 1)
+            ->values()
+            ->map(function (Tenant $tenant) {
+                return [
+                    'id' => $tenant->id,
+                    'name' => $tenant->name,
+                    'slug' => $tenant->slug,
+                    'status' => $tenant->status,
+                    'awaiting_approval' => $tenant->trialHasExpired(),
+                    'trial_ends_at' => $tenant->trial_ends_at,
+                    'domain' => '/w/'.$tenant->slug.'/',
+                    'industry_key' => $tenant->industry_key,
+                    'industry_name' => IndustryCatalog::name((string) $tenant->industry_key),
+                    'branches' => $this->countInside($tenant, 'branches'),
+                    'branch_limit' => TenantLimit::query()->where('tenant_id', $tenant->id)->where('limit_key', 'max_branches')->value('value'),
+                    'updated_at' => $tenant->updated_at,
+                ];
+            });
 
         return Inertia::render('Platform/Tenants', ['tenants' => $tenants]);
     }
@@ -123,6 +141,14 @@ class PlatformController extends Controller
         $features = Feature::query()->orderBy('key')->get();
         $overrides = TenantFeature::query()->where('tenant_id', $tenant->id)->get()->keyBy('feature_key');
         $limits = TenantLimit::query()->where('tenant_id', $tenant->id)->get();
+        $directory = $this->tenantHasTable($tenant, 'users')
+            ? $this->inside($tenant, fn (): array => [
+                'users' => User::query()->orderBy('name')->get(['id', 'name', 'email', 'status', 'job_title']),
+                'roles' => Role::query()->whereNull('archived_at')->orderBy('name')->get(['id', 'name']),
+                'branches' => Branch::query()->orderBy('name')->get(['id', 'name']),
+            ])
+            : ['users' => [], 'roles' => [], 'branches' => []];
+        $tenant->setAttribute('awaiting_approval', $tenant->trialHasExpired());
 
         return Inertia::render('Platform/TenantShow', [
             'tenant' => $tenant->load('workspace'),
@@ -135,9 +161,9 @@ class PlatformController extends Controller
                 'expires_at' => $overrides[$feature->key]->expires_at ?? null,
             ]),
             'limits' => $limits,
-            'users' => $this->tenantHasTable($tenant, 'users')
-                ? $this->inside($tenant, fn () => User::query()->get(['id', 'name', 'email', 'status', 'job_title']))
-                : [],
+            'users' => $directory['users'],
+            'roles' => $directory['roles'],
+            'branches' => $directory['branches'],
             'impersonations' => ImpersonationLog::query()->where('tenant_id', $tenant->id)->latest()->limit(20)->get(),
             'templates' => IndustryCatalog::options(),
         ]);
@@ -175,11 +201,71 @@ class PlatformController extends Controller
 
     public function activate(Tenant $tenant): RedirectResponse
     {
-        $tenant->update(['status' => 'active', 'suspended_reason' => null, 'retention_until' => null]);
+        $wasTrial = $tenant->status === 'trial';
+        $tenant->update([
+            'status' => 'active',
+            'suspended_reason' => null,
+            'retention_until' => null,
+            'approved_at' => $tenant->approved_at ?? now(),
+        ]);
         Workspace::query()->where('tenant_id', $tenant->id)->update(['status' => 'active']);
+        if ($wasTrial) {
+            $this->notifyApproved($tenant);
+        }
         $this->audit->central('tenant.activated', 'tenant', $tenant->id);
 
-        return back()->with('success', 'Tenant activated.');
+        return back()->with('success', $wasTrial ? 'Workspace approved. People can keep using it.' : 'Tenant activated.');
+    }
+
+    public function storeUser(Request $request, Tenant $tenant): RedirectResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['required', 'email', 'max:190'],
+            'phone' => ['nullable', 'string', 'max:40'],
+            'password' => ['required', 'string', 'min:'.(int) config('makerly.password_min')],
+            'role_id' => ['required', 'uuid'],
+            'branch_id' => ['required', 'uuid'],
+        ]);
+        if (! $this->tenantHasTable($tenant, 'users')) {
+            throw ValidationException::withMessages(['email' => 'This workspace is not ready for people yet.']);
+        }
+
+        $email = strtolower($data['email']);
+        $this->inside($tenant, function () use ($data, $tenant, $email): void {
+            $max = $this->features->limit('max_staff_users');
+            if ($max && User::query()->where('status', '!=', 'deactivated')->count() >= $max) {
+                throw ValidationException::withMessages(['email' => "This workspace allows {$max} people. Raise the limit to add another."]);
+            }
+            if (User::query()->whereRaw('lower(email) = ?', [$email])->exists()) {
+                throw ValidationException::withMessages(['email' => 'That email is already used in this workspace.']);
+            }
+            if (! Role::query()->whereKey($data['role_id'])->whereNull('archived_at')->exists()) {
+                throw ValidationException::withMessages(['role_id' => 'Choose a role from this workspace.']);
+            }
+            if (! Branch::query()->whereKey($data['branch_id'])->exists()) {
+                throw ValidationException::withMessages(['branch_id' => 'Choose a branch from this workspace.']);
+            }
+            $user = $this->provisioner->inviteUser([
+                'name' => $data['name'],
+                'email' => $email,
+                'phone' => $data['phone'] ?? null,
+                'password' => $data['password'],
+            ], $data['role_id'], $data['branch_id']);
+            UserNotification::query()->create([
+                'user_id' => $user->id,
+                'type' => 'workspace_member',
+                'title' => 'You can sign in',
+                'body' => WorkspaceApproval::memberMessage($tenant->name),
+            ]);
+            $this->audit->central('tenant.user_created', 'user', $user->id, null, [
+                'tenant_id' => $tenant->id,
+                'email' => $email,
+            ]);
+        });
+        $this->sendNotice($email, 'You can sign in to '.$tenant->name, WorkspaceApproval::memberMessage($tenant->name));
+
+        return back()->with('success', 'Person added. They can sign in with that email and the password you set.');
     }
 
     public function features(Request $request, Tenant $tenant): RedirectResponse
@@ -351,6 +437,66 @@ class PlatformController extends Controller
         $this->audit->central('template.updated', 'industry_template', $saved->id);
 
         return back()->with('success', 'Template saved.');
+    }
+
+    private function notifyTrial(Tenant $tenant): void
+    {
+        $owner = User::query()->whereRaw('lower(email) = ?', [strtolower((string) $tenant->owner_email)])->first();
+        if ($owner) {
+            UserNotification::query()->create([
+                'user_id' => $owner->id,
+                'type' => 'workspace_trial',
+                'title' => 'Three-day trial',
+                'body' => WorkspaceApproval::trialMessage($tenant),
+            ]);
+        }
+        $this->sendNotice(
+            $tenant->owner_email,
+            'Your workspace is ready for '.WorkspaceApproval::trialDays().' days',
+            WorkspaceApproval::trialMessage($tenant),
+        );
+        $this->sendNotice(
+            WorkspaceApproval::email(),
+            'New workspace signup: '.$tenant->name,
+            WorkspaceApproval::signupAlert($tenant),
+        );
+    }
+
+    private function notifyApproved(Tenant $tenant): void
+    {
+        $this->inside($tenant, function () use ($tenant): void {
+            $owner = User::query()->whereRaw('lower(email) = ?', [strtolower((string) $tenant->owner_email)])->first()
+                ?? User::query()->orderBy('created_at')->first();
+            if (! $owner) {
+                return;
+            }
+            UserNotification::query()->create([
+                'user_id' => $owner->id,
+                'type' => 'workspace_approved',
+                'title' => 'Workspace approved',
+                'body' => WorkspaceApproval::approvedMessage($tenant->name),
+            ]);
+        });
+        $this->sendNotice(
+            $tenant->owner_email,
+            $tenant->name.' is approved',
+            WorkspaceApproval::approvedMessage($tenant->name),
+        );
+    }
+
+    private function sendNotice(?string $to, string $subject, string $notice): void
+    {
+        if (! is_string($to) || $to === '') {
+            return;
+        }
+
+        try {
+            Mail::to($to)->send(new WorkspaceApprovalNotice($subject, $notice));
+        } catch (\Throwable $exception) {
+            Log::warning('Workspace notice could not be sent.', [
+                'error' => $exception->getMessage(),
+            ]);
+        }
     }
 
     private function storeVocabulary(Tenant $tenant, string $key): void

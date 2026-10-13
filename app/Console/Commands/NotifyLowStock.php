@@ -16,7 +16,7 @@ class NotifyLowStock extends Command
 
     public function handle(TenancyManager $tenancy): int
     {
-        foreach (Tenant::query()->where('status', 'active')->get() as $tenant) {
+        foreach (Tenant::query()->usable()->get() as $tenant) {
             $tenancy->initialize($tenant);
             $rows = DB::connection('tenant')->table('items')
                 ->join('stock_balances', function ($join) {

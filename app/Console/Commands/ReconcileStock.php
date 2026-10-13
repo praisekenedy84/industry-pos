@@ -16,7 +16,7 @@ class ReconcileStock extends Command
     public function handle(TenancyManager $tenancy): int
     {
         $mismatches = 0;
-        foreach (Tenant::query()->where('status', 'active')->get() as $tenant) {
+        foreach (Tenant::query()->usable()->get() as $tenant) {
             $tenancy->initialize($tenant);
             $rows = DB::connection('tenant')->select(<<<'SQL'
                 SELECT b.item_id, b.branch_id, b.qty AS balance_qty, COALESCE(SUM(m.signed_qty), 0) AS movement_qty

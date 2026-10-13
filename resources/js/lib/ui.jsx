@@ -416,6 +416,7 @@ export function Shell({ title, actions, children }) {
             </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
                 {impersonation && <Alert severity="warning" sx={{ borderRadius: 0 }} action={<form method="post" action={w('/impersonation/leave')}><Csrf /><Button icon="logout" type="submit" tone="ghost">{t("Leave")}</Button></form>}>{t("You are viewing this workspace as support. Session ends")} {impersonation.expires_at}.</Alert>}
+                {!platform && tenant?.trial && <Alert severity="info" sx={{ borderRadius: 0 }}>{t("You can use this workspace until")} {new Date(tenant.trial.ends_at).toLocaleString()}. {t("After that, an admin must approve it. Call +255743463710 or +255715148503, or email info@mernettechnologies.com.")}</Alert>}
                 <AppBar position="sticky" color="inherit" elevation={0} sx={{ borderBottom: 1, borderColor: 'divider' }}>
                     <Toolbar sx={{ gap: 1.5, minHeight: { xs: 72 }, px: { xs: 2, lg: 4 } }}>
                         <IconButton aria-label={t("Open navigation")} aria-controls="mobile-navigation" aria-expanded={mobileOpen} onClick={() => setMobileOpen(true)} sx={{ display: { md: 'none' } }}><MenuIcon size={22} /></IconButton>

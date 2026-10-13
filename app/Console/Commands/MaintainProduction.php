@@ -20,7 +20,7 @@ class MaintainProduction extends Command
     public function handle(TenancyManager $tenancy, ProductionService $production): int
     {
         $previous = $tenancy->tenant();
-        $tenants = Tenant::query()->where('status', 'active')->when($this->option('tenant'), fn ($query) => $query->where('slug', $this->option('tenant')))->get();
+        $tenants = Tenant::query()->usable()->when($this->option('tenant'), fn ($query) => $query->where('slug', $this->option('tenant')))->get();
         try {
             foreach ($tenants as $tenant) {
                 $tenancy->initialize($tenant);

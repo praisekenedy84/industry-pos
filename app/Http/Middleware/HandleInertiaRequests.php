@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\Branch;
 use App\Models\Identity;
+use App\Models\User;
 use App\Models\UserNotification;
 use App\Models\Workspace;
 use App\Reports\ReportRegistry;
@@ -11,6 +12,7 @@ use App\Services\AccessManager;
 use App\Services\FeatureGate;
 use App\Support\IndustryVocabulary;
 use App\Support\Paths;
+use App\Support\WorkspaceApproval;
 use App\Tenancy\TenancyManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
@@ -67,13 +69,19 @@ class HandleInertiaRequests extends Middleware
             'receipt_language' => $tenant->receipt_language,
             'accent' => $tenant->accent_color,
             'timezone' => $tenant->timezone,
+            'trial' => $tenant->status === 'trial' ? [
+                'ends_at' => $tenant->trial_ends_at?->toIso8601String(),
+                'phones' => WorkspaceApproval::phones(),
+                'email' => WorkspaceApproval::email(),
+            ] : null,
         ];
     }
 
     private function authPayload(Request $request): array
     {
         $tenancy = app(TenancyManager::class);
-        $user = $tenancy->initialized() ? $request->user() : null;
+        $account = $tenancy->initialized() ? $request->user() : null;
+        $user = $account instanceof User ? $account : null;
         $admin = $request->user('platform');
         $identity = $request->attributes->get('identity');
         $branchId = $request->session()->get('branch_id');

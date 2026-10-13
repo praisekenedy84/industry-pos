@@ -9,4 +9,7 @@ return [
     'absolute_session_hours' => 12,
     'impersonation_minutes' => 60,
     'password_min' => 10,
+    'trial_days' => 3,
+    'approval_phones' => ['+255743463710', '+255715148503'],
+    'approval_email' => 'info@mernettechnologies.com',
 ];

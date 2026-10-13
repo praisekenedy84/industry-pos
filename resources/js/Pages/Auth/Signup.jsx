@@ -8,6 +8,7 @@ export default function Signup({ templates }) {
     const form = useForm({ name: '', slug: '', owner_name: '', owner_email: '', owner_password: '', industry_key: templates.some((template) => template.key === 'bakery') ? 'bakery' : (templates[0]?.key || 'general') });
     return (
         <AuthCard title={t("Create a workspace")}>
+            <p className="mb-3 text-sm text-muted">{t("You can use the workspace for 3 days. After that, an admin must approve it. Call +255743463710 or +255715148503, or email info@mernettechnologies.com.")}</p>
             <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); form.post('/signup'); }}>
                 <Errors errors={form.errors} />
                 <Field error={form.errors.name} label={t("Business name")}><Input className={inputClass} value={form.data.name} onChange={(event) => form.setData('name', event.target.value)} /></Field>

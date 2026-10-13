@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\ApiTokenTenant;
 use App\Models\Tenant;
+use App\Support\WorkspaceApproval;
 use App\Tenancy\TenancyManager;
 use Closure;
 use Illuminate\Http\Request;
@@ -24,8 +25,10 @@ class ResolveApiTenant
             abort(401, 'Invalid token.');
         }
         $tenant = Tenant::query()->find($row->tenant_id);
-        if (! $tenant || $tenant->isSuspended()) {
-            abort(403, 'This workspace is not available.');
+        if (! $tenant || ! $tenant->canUseSystem()) {
+            abort(403, $tenant && $tenant->trialHasExpired()
+                ? WorkspaceApproval::expiredMessage($tenant->name)
+                : 'This workspace is not available.');
         }
         $this->tenancy->initialize($tenant);
         app()->instance('makerly.host', 'tenant');

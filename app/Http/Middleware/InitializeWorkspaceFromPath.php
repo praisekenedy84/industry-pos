@@ -4,11 +4,11 @@ namespace App\Http\Middleware;
 
 use App\Models\Tenant;
 use App\Models\Workspace;
+use App\Support\WorkspaceApproval;
 use App\Tenancy\TenancyManager;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
-use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 
 class InitializeWorkspaceFromPath
@@ -37,11 +37,9 @@ class InitializeWorkspaceFromPath
         app()->instance('makerly.base', '/w/'.$slug);
         app()->instance('makerly.host', 'tenant');
 
-        if ($tenant->isSuspended() || $workspace->status !== 'active') {
-            return Inertia::render('Errors/Suspended', [
-                'tenant' => $workspace->display_name,
-                'reason' => $tenant->suspended_reason ?: 'This workspace is suspended.',
-            ])->toResponse($request)->setStatusCode(403);
+        $blocked = WorkspaceApproval::deny($request, $tenant, $workspace);
+        if ($blocked) {
+            return $blocked;
         }
 
         $this->tenancy->initialize($tenant);

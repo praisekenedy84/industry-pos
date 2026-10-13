@@ -59,6 +59,7 @@ Route::middleware('central')->group(function () {
             Route::put('/tenants/{tenant}', [PlatformController::class, 'update']);
             Route::post('/tenants/{tenant}/suspend', [PlatformController::class, 'suspend']);
             Route::post('/tenants/{tenant}/activate', [PlatformController::class, 'activate']);
+            Route::post('/tenants/{tenant}/users', [PlatformController::class, 'storeUser']);
             Route::put('/tenants/{tenant}/features', [PlatformController::class, 'features']);
             Route::put('/tenants/{tenant}/limits', [PlatformController::class, 'limits']);
             Route::post('/tenants/{tenant}/impersonate', [PlatformController::class, 'impersonate']);

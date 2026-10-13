@@ -37,6 +37,7 @@ use App\Support\FeatureCatalog;
 use App\Support\IndustryCatalog;
 use App\Support\IndustryVocabulary;
 use App\Support\PermissionCatalog;
+use App\Support\WorkspaceApproval;
 use App\Support\WorkspaceSlug;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -52,17 +53,20 @@ class TenantProvisioner
         $slug = WorkspaceSlug::assert($input['slug']);
 
         $schema = 't_'.str_replace('-', '_', $slug);
+        $trial = (bool) ($input['trial'] ?? false);
         $tenant = Tenant::query()->create([
             'name' => $input['name'],
             'slug' => $slug,
             'schema_name' => $schema,
-            'status' => 'active',
+            'status' => $trial ? 'trial' : 'active',
             'industry_key' => $input['industry_key'] ?? 'bakery',
             'default_locale' => $input['default_locale'] ?? 'en',
             'receipt_language' => $input['receipt_language'] ?? 'bilingual',
             'accent_color' => $input['accent_color'] ?? '#0075de',
             'timezone' => 'Africa/Dar_es_Salaam',
             'owner_email' => $input['owner_email'],
+            'trial_ends_at' => $trial ? now()->addDays(WorkspaceApproval::trialDays()) : null,
+            'approved_at' => $trial ? null : now(),
         ]);
 
         Workspace::query()->create([
@@ -385,6 +389,8 @@ class TenantProvisioner
                 'status' => 'active',
             ]);
             $user->forceFill(['membership_id' => $membership->id, 'status' => 'active', 'joined_at' => now()])->save();
+        } elseif (! empty($data['password']) && $user->email) {
+            $this->attachIdentity($user, $data['password']);
         } else {
             Invitation::query()->create([
                 'tenant_id' => $tenantId,
