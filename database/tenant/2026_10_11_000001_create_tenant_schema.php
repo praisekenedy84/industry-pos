@@ -815,7 +815,8 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        DB::statement('CREATE UNIQUE INDEX stock_balances_item_branch_lot_uidx ON stock_balances (item_id, branch_id, lot_id) NULLS NOT DISTINCT');
+        DB::statement('CREATE UNIQUE INDEX stock_balances_item_branch_lot_uidx ON stock_balances (item_id, branch_id, lot_id) WHERE lot_id IS NOT NULL');
+        DB::statement('CREATE UNIQUE INDEX stock_balances_item_branch_null_lot_uidx ON stock_balances (item_id, branch_id) WHERE lot_id IS NULL');
 
         DB::unprepared(<<<'SQL'
 CREATE OR REPLACE FUNCTION makerly_stock_movements_immutable()
